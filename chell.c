@@ -2,16 +2,14 @@
  * @file chell.c
  * @author Tom Gordon
  * @brief Contains processChar(), which accepts a character from stdin and returns a character for stdout (or uses a call-back).
- * Provides a full-featured shell interface, including handling of backspace, function and arrow keys for line navigation and line recall.
+ * Provides a full-featured, Linux-style shell interface, including handling of backspace, function and arrow keys for line navigation and line recall.
  * Allows registering of shell commands, including progressive help and function handling for each. Each handler will receive the command string,
  * Number of parameters, and parameter list. Automatically provide a "help" shell command, based on the help provided for each command registered.
- * May also provide a call-back to provide auto-fill suggestions.
+ * 
+ * FUTURE: also provide a call-back to provide parameter hints.
  * 
  * Written in standard C and uses only standard library headers, minimum RAM, to allow integration into even the smallest projects.
  *
- * @version 0.1
- * @date 2023-09-18
- * 
  * @copyright Copyright (c) 2023
  * 
  */
@@ -40,23 +38,18 @@ typedef struct
 } Cmd_struct;
 
 // Local prototypes.
+static bool processString(char const * const str);
+static void outChar(int (*cb_out)(int c), const char c);
+static void handle_help(char const * const cmd, char const * const * param, int numParams);
 
 // File globals.
-static bool g_helpInitialized = false;    // help command list has been initialized, to include help handler
-static Cmd_struct g_cmd[MAX_COMMANDS] = { 0 };   // list of commands, as registered
-static int g_numRegCmds = 0;  // the number of commands registered, including the standard help
-
-static void handle_help(char const * const cmd, char const * const * param, int numParams)
-{
-  (void)cmd;
-  (void)param;
-  (void)numParams;
-
-  printf("Built %s %s. Commands:", __DATE__, __TIME__);
-  int i;
-  for (i=0;i<g_numRegCmds; i++)
-      printf("\t%s %s\n", g_cmd[i].cmd, g_cmd[i].help);
-}
+static char g_outLineEnd = '\n';                // preferred line-end character
+static bool g_helpInitialized = false;          // help command list has been initialized, to include help handler
+static Cmd_struct g_cmd[MAX_COMMANDS] = { 0 };  // list of commands, as registered
+static int g_numRegCmds = 0;                    // the number of commands registered, including the standard help
+static void (*g_cb_out)(const char c);          // if used, allows feeding characters to output through a call-back function - set to NULL if not used
+static char g_outCharsBuf[MAX_STR+1] = { 0 };   // buffer to hold stdout characters until return
+static int g_outCharIdx = 0;                    // next index into outCharBuf[] - empty if zero
 
 bool chell_RegisterHandler(const char * cmd, void (*handler)(char const * const cmd, char const * const * param, int numParams), const char * help, char const * const * hints)
 {
@@ -117,10 +110,10 @@ bool chell_RegisterHandler(const char * cmd, void (*handler)(char const * const 
  * 0x1B 0x4F 0x52 escape sequence = F3
  * 
  * @param c ASCIIZ character that is next in stream of characters to process
- * @param cb_out call-back to stdout stream
+ * @param cb_out call-back to stdout stream - putchar works nicely, if available
  * @return char* ASCIIZ string received, or NULL if complete string and line-end not received yet
  */
-char * chell_ProcessChar(const char c, void (*cb_out)(const char c))
+char * chell_ProcessChar(const char c, int (*cb_out)(int c))
 {
   const char kUpArrowEscape[] = "\x1B\x5b\x41";
   const char kDownArrowEscape[] = "\x1B\x5b\x42";
@@ -132,61 +125,25 @@ char * chell_ProcessChar(const char c, void (*cb_out)(const char c))
   static int hidx = 0;
   static int idx = 0;
   static char escapeChars[3] = { 0 };
+  static bool lineEnding = false;   // set true if currently "line ending", to ignore further line-end characters
 
   // If chell_RegisterHandler() was never called to register any user commands, then initialize it now so that at least "help" is handled.
   // Maybe make it a special help command, to provide help on how to register commands ?
   if (!g_helpInitialized)
   {
+    // Register the built-in help handler. Must flag as initialized first, to avoid re-adding in register call.
     g_helpInitialized = true;
+    chell_RegisterHandler("help", handle_help, NULL, NULL);
   }
 
-  // Capture remainder of 3-character escape sequences, if escape (0x1B) has already been captured.
-  if (escapeChars[0] == 0x1B)
-  {
-    if (escapeChars[1] == 0)
-    {
-      escapeChars[1] = c;   // 2nd character
-    } else
-    {
-      escapeChars[2] = c;   // 3rd and final character
-      if ( (memcmp(escapeChars, kUpArrowEscape, sizeof(escapeChars)) == 0) || (memcmp(escapeChars, kF3Escape, sizeof(escapeChars)) == 0) )
-      {
-        // For up arrow and F3, replace buffer with previous in history, and replace string at prompt.
-        if (--hidx < 0)
-          hidx = MAX_HISTORY - 1;
-        memcpy(buf, history[hidx], sizeof(buf));
-        buf[MAX_TOTAL_COMMAND_CHARS] = '\0';
-        idx = strlen(buf);
-        int i;
-// TODO: need some mechanism for echoing characters to system-defined outgoing stream.
-        // for (i=0;i<MAX_CMD;i++)
-        //   cb_out(0x08);
-        // for (i=0;i<MAX_CMD;i++)
-        //   cb_out(' ');
-        // for (i=0;i<MAX_CMD;i++)
-        //   cb_out(0x08);
-        // for (i=0;i<idx;i++)
-        //   cb_out(buf[i]);
-      }
+  // Ignore subsequent line-end characters if one already processed.
+  // Note we would have already returned the string processed with our first line-end character processed.
+  // TODO: we may need to accommodate multiple, single returns hit (blank lines).
+  if (lineEnding && ((c == 0x0D) || (c == 0x0A)))
+    return NULL;
 
-      if ((memcmp(escapeChars, kLeftArrowEscape, sizeof(escapeChars)) == 0) && (idx > 0))
-      {
-        // For left arrow, move cursor and index left, to start of string.
-        cb_out(0x08);
-        idx--;
-      }
-
-      if ((memcmp(escapeChars, kRightArrowEscape, sizeof(escapeChars)) == 0) && (idx < (MAX_TOTAL_COMMAND_CHARS)) && (buf[idx] != '\0'))
-      {
-        // For right arrow, move cursor and index right, to just past end of string currently buffered.
-        cb_out(0x08);
-        idx--;
-      }
-
-      memset(escapeChars, 0, sizeof(escapeChars));
-    }
-    return NULL;  // no more to do until next character or c/r entered
-  }
+  // If here, then not a line-end character, or not already "line ending", so reset that flag.
+  lineEnding = false;
 
   if (c == 0x1B)
   {
@@ -199,37 +156,101 @@ char * chell_ProcessChar(const char c, void (*cb_out)(const char c))
     // Handle backspace (0x08) or del (0x7F)
     if (idx > 0)
     {
-      cb_out(0x08);
-      cb_out(' ');
-      cb_out(0x08);
+      outChar(cb_out, 0x08);
+      outChar(cb_out, ' ');
+      outChar(cb_out, 0x08);
       idx--;
     }
   } else if ((c == 0x0D) || (c == 0x0A))
   {
-    // // Flush receive buffer to clear out any remaining line-end characters.
-    // while (Serial.available() > 0)
-    //   Serial.read();
+    /** Line-end received, command has been entered. **/
 
-    // Reset and return buffer on c/r or l/f.
+    // Terminate buffer, and echo line-end.
     buf[idx] = '\0';  // make sure we're terminated
     idx = 0;          // reset for next command
-    cb_out('\n'); // echo the line-end
-    memcpy(history[hidx], buf, sizeof(history[0]));
-    hidx = (hidx + 1) % MAX_HISTORY;  //TODO: always place latest line at end of history
-    return buf;
+    outChar(cb_out, '\n'); // echo the line-end
+
+    // Parse and process string received.
+    if (processString(buf))
+    {
+      // Track successful command history.
+      memcpy(history[hidx], buf, sizeof(history[0]));
+      hidx = (hidx + 1) % MAX_HISTORY;
+    }
   } else if ((c >= ' ') && (c <= '~'))
   {
     // Otherwise buffer and echo any printable character. Don't allow index beyond buffer bytes - 1, to allow for NULL-terminator.
     if (idx < (MAX_TOTAL_COMMAND_CHARS))
     {
       buf[idx] = (char)c;
-      cb_out(c);
+      outChar(cb_out, c);
       idx++;
     }
   }
 
-  // No c/r yet.
-  return NULL;
+  // Return any pending output characters, otherwise return an empty string.
+  if (g_outCharIdx > 0)
+  {
+    g_outCharsBuf[g_outCharIdx] = '\0';   // make sure string is null-terminated
+    g_outCharIdx = 0;                     // reset buffer index
+    return g_outCharsBuf;
+  } else
+  {
+    return "";
+  }
+}
+
+/**
+ * @brief Set the preferred line-end character for stdout. Default is line-feed.
+ * 
+ * @param c preferred line-end character
+ */
+void setOutLineEnd(char c) { g_outLineEnd = c; }
+
+static bool processString(char const * const str)
+{
+  // command not valid: return failure.
+  return false;
+}
+
+/**
+ * @brief Uses the given call-back to feed characters back to caller's stdout, either by calling
+ * given call-back function, or buffering until return (if cb_out is NULL).
+ * 
+ * @param cb_out caller's call-back for outputting to stdout - may be NULL if not used
+ * @param c character to try to write to caller's stdout
+ */
+static void outChar(int (*cb_out)(int c), const char c)
+{
+  // If given, use call-back to send character to stdout
+  if (cb_out)
+  {
+    cb_out(c);
+  } else
+  {
+    // Otherwise, buffer and return as a string of one or more characters.
+    if (g_outCharIdx < MAX_STR)
+      g_outCharsBuf[g_outCharIdx++] = c;
+  }
+}
+
+/**
+ * @brief Built-in handler to display help on all register commands.
+ * 
+ * @param cmd command string, e.g. "move" - passed to all command handlers
+ * @param param pointer to list of parameter strings - passed to all command handlers
+ * @param numParams the number of parameter strings - passed to all command handlers
+ */
+static void handle_help(char const * const cmd, char const * const * param, int numParams)
+{
+  (void)cmd;
+  (void)param;
+  (void)numParams;
+
+  printf("Built %s %s. Commands:", __DATE__, __TIME__);
+  int i;
+  for (i=0;i<g_numRegCmds; i++)
+      printf("\t%s %s\n", g_cmd[i].cmd, g_cmd[i].help);
 }
 
 #ifdef STAND_ALONE
@@ -244,7 +265,7 @@ int main(int argc, char * argv[])
   while (c != 0x1B)
   {
     c = getchar();
-    putchar(c);
+    chell_ProcessChar(c, putchar);
   }
 }
 #endif  // STAND_ALONE
