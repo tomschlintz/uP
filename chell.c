@@ -19,6 +19,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#include "loopback.h" // for testing with a loop-back connection
+
 #define STAND_ALONE   // define to include a main() function, for stand-alone testing
 
 #define MAX_STR 64      // maximum command or parameter string expected, for sizing arrays.
@@ -104,12 +106,12 @@ bool chell_RegisterHandler(const char * cmd, void (*handler)(char const * const 
 }
 
 /**
- * @brief Call from main loop as often as possible, looks for incoming serial characters, echos, 
- * and allows for backspace to retype and escape to start over. Returns NULL until c/r received.
- * 0x1B 0x5B 0x41 escape sequence = up arrow
- * 0x1B 0x4F 0x52 escape sequence = F3
+ * @brief Call with each character received from an input stream, one character per call.
+ * Recognizes and processes commands with parameters (based on handlers registered), with each line ending with one or more line-end characters.
+ * Recognizes and handles backspace characters and escape sequences.
+ * Uses cb_out call-back to echo received, and process backspace and escape sequences.
  * 
- * @param c ASCIIZ character that is next in stream of characters to process
+ * @param c ASCIIZ character that is next in stdin stream of characters to process
  * @param cb_out call-back to stdout stream - putchar works nicely, if available
  * @return char* ASCIIZ string received, or NULL if complete string and line-end not received yet
  */
@@ -253,19 +255,48 @@ static void handle_help(char const * const cmd, char const * const * param, int 
       printf("\t%s %s\n", g_cmd[i].cmd, g_cmd[i].help);
 }
 
+
+
 #ifdef STAND_ALONE
+#include <stdio.h>
+#include <stdint.h>
+#include <stdbool.h>
+
+// Loop-back serial device strings.
+#ifdef __linux__
+char const * const devstr = "/dev/pts/1";
+#else
+char const * const devstr = "COM1";
+#endif // __linux__
+
 /**
  * @brief Main entry function, for testing via command-line.
  */
 int main(int argc, char * argv[])
 {
-  // Register set of test commands.
-  // Accept and process input, echo output, until escape key hit.
-  char c = '\0';
+  FILE * fp = loopback_open(devstr);
+  if (fp == NULL)
+  {
+    printf("Failed to open \"%s\"\n", devstr);
+    return -1;
+  }
+
+  printf("Using serial I/O through \"%s\"\n", devstr);
+
+  char c = ' ';
   while (c != 0x1B)
   {
-    c = getchar();
-    chell_ProcessChar(c, putchar);
+    c = loopback_getc(fp);
+    loopback_putc(c, fp);
+    printf("%02X ", (uint16_t)c);
+    // putchar(c);
+    // if (c == '\r')
+    //   putchar('\n');    // auto line-feed w/carriage return
   }
+
+  loopback_close(fp);
+
+  puts("\nDone.");
+  return 0;
 }
 #endif  // STAND_ALONE

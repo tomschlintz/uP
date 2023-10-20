@@ -1,0 +1,3 @@
+ps
+killall socat
+ps
