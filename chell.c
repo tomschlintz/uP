@@ -18,8 +18,8 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdbool.h>
-
-#include "loopback.h" // for testing with a loop-back connection
+#include <stdarg.h>
+#include "chell.h"
 
 #define STAND_ALONE   // define to include a main() function, for stand-alone testing
 
@@ -40,16 +40,18 @@ typedef struct
 } Cmd_struct;
 
 // Local prototypes.
-static bool processString(char const * const str);
-static void outChar(int (*cb_out)(int c), const char c);
+static bool processLine(char const * const line);
+static void outChar(const char c);
 static void handle_help(char const * const cmd, char const * const * param, int numParams);
+static void cbPrintf(char * fmt, ...);
 
 // File globals.
-static char g_outLineEnd = '\n';                // preferred line-end character
+static char g_outLineEnd[3] = {0};             // preferred line-end character(s) to output
+static bool g_lineEndSet = false;               // set true only after line-end initialized
 static bool g_helpInitialized = false;          // help command list has been initialized, to include help handler
 static Cmd_struct g_cmd[MAX_COMMANDS] = { 0 };  // list of commands, as registered
 static int g_numRegCmds = 0;                    // the number of commands registered, including the standard help
-static void (*g_cb_out)(const char c);          // if used, allows feeding characters to output through a call-back function - set to NULL if not used
+static void (*g_cb_out)(const char c) = NULL;   // if used, allows feeding characters to output through a call-back function - set to NULL if not used
 static char g_outCharsBuf[MAX_STR+1] = { 0 };   // buffer to hold stdout characters until return
 static int g_outCharIdx = 0;                    // next index into outCharBuf[] - empty if zero
 
@@ -129,6 +131,16 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
   static char escapeChars[3] = { 0 };
   static bool lineEnding = false;   // set true if currently "line ending", to ignore further line-end characters
 
+  // Copy pointer to character output call-back as file global, for use by other functions herein.
+  g_cb_out = (void(*)(char))cb_out;
+
+  // If not otherwise called, default our preferred line-end we write out to CRLF.
+  if (!g_lineEndSet)
+  {
+    g_lineEndSet = true;
+    strcpy(g_outLineEnd, "\r\n");
+  }
+
   // If chell_RegisterHandler() was never called to register any user commands, then initialize it now so that at least "help" is handled.
   // Maybe make it a special help command, to provide help on how to register commands ?
   if (!g_helpInitialized)
@@ -158,9 +170,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     // Handle backspace (0x08) or del (0x7F)
     if (idx > 0)
     {
-      outChar(cb_out, 0x08);
-      outChar(cb_out, ' ');
-      outChar(cb_out, 0x08);
+      cbPrintf("\x08 \x08");  // backspace, clear, backspace again
       idx--;
     }
   } else if ((c == 0x0D) || (c == 0x0A))
@@ -170,22 +180,24 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     // Terminate buffer, and echo line-end.
     buf[idx] = '\0';  // make sure we're terminated
     idx = 0;          // reset for next command
-    outChar(cb_out, '\n'); // echo the line-end
 
     // Parse and process string received.
-    if (processString(buf))
+    if (processLine(buf))
     {
       // Track successful command history.
       memcpy(history[hidx], buf, sizeof(history[0]));
       hidx = (hidx + 1) % MAX_HISTORY;
     }
+
+    // Prompt
+    cbPrintf(g_outLineEnd);
   } else if ((c >= ' ') && (c <= '~'))
   {
     // Otherwise buffer and echo any printable character. Don't allow index beyond buffer bytes - 1, to allow for NULL-terminator.
     if (idx < (MAX_TOTAL_COMMAND_CHARS))
     {
       buf[idx] = (char)c;
-      outChar(cb_out, c);
+      cb_out(c);
       idx++;
     }
   }
@@ -203,14 +215,30 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
 }
 
 /**
- * @brief Set the preferred line-end character for stdout. Default is line-feed.
+ * @brief Set the preferred line-end characters for stdout. Default is a single line-feed.
+ * May be "\r", "\n" or "\r\n", or any string of up to two characters.
  * 
- * @param c preferred line-end character
+ * @param c preferred line-end characters, max two characters
  */
-void setOutLineEnd(char c) { g_outLineEnd = c; }
-
-static bool processString(char const * const str)
+void chell_setOutLineEnd(const char * str)
 {
+  memset(g_outLineEnd, 0, sizeof(g_outLineEnd));      // pre-clear string
+  strncpy(g_outLineEnd, str, sizeof(g_outLineEnd)-1); // copy up to two characters for line-end
+}
+
+/**
+ * @brief Parses complete string received, then identifies and processes command, with parameters.
+ * 
+ * @param line string received
+ * @return true 
+ * @return false 
+ */
+static bool processLine(char const * const line)
+{
+  printf("Processing line \"%s\"\n", line);
+
+
+
   // command not valid: return failure.
   return false;
 }
@@ -219,15 +247,14 @@ static bool processString(char const * const str)
  * @brief Uses the given call-back to feed characters back to caller's stdout, either by calling
  * given call-back function, or buffering until return (if cb_out is NULL).
  * 
- * @param cb_out caller's call-back for outputting to stdout - may be NULL if not used
  * @param c character to try to write to caller's stdout
  */
-static void outChar(int (*cb_out)(int c), const char c)
+static void outChar(const char c)
 {
   // If given, use call-back to send character to stdout
-  if (cb_out)
+  if (g_cb_out)
   {
-    cb_out(c);
+    g_cb_out(c);
   } else
   {
     // Otherwise, buffer and return as a string of one or more characters.
@@ -249,18 +276,40 @@ static void handle_help(char const * const cmd, char const * const * param, int 
   (void)param;
   (void)numParams;
 
-  printf("Built %s %s. Commands:", __DATE__, __TIME__);
+  cbPrintf("Built %s %s. Commands:%s", __DATE__, __TIME__, g_outLineEnd);
   int i;
   for (i=0;i<g_numRegCmds; i++)
-      printf("\t%s %s\n", g_cmd[i].cmd, g_cmd[i].help);
+      cbPrintf("\t%s %s%s", g_cmd[i].cmd, g_cmd[i].help, g_outLineEnd);
 }
 
+/**
+ * @brief Format and use call-back to output to stream.
+ * 
+ * @param fmt 
+ * @param ... 
+ */
+static void cbPrintf(char * fmt, ...)
+{
+  va_list args;
+  char str[MAX_SHELL_STRING+1];
+
+  va_start(args, fmt);
+  vsprintf(str, fmt, args);
+  va_end(args);
+
+  int len = strlen(str);
+  int i;
+  for (i=0;i<len;i++)
+    outChar(str[i]);
+}
 
 
 #ifdef STAND_ALONE
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+
+#include "loopback.h" // for testing with a loop-back connection
 
 // Loop-back serial device strings.
 #ifdef __linux__
@@ -269,12 +318,17 @@ char const * const devstr = "/dev/pts/1";
 char const * const devstr = "COM1";
 #endif // __linux__
 
+FILE * fp = NULL;
+
+// Use loopback out as our output call-back.
+int cb(int c) { loopback_putc(c, fp); }
+
 /**
  * @brief Main entry function, for testing via command-line.
  */
 int main(int argc, char * argv[])
 {
-  FILE * fp = loopback_open(devstr);
+  fp = loopback_open(devstr);
   if (fp == NULL)
   {
     printf("Failed to open \"%s\"\n", devstr);
@@ -286,12 +340,11 @@ int main(int argc, char * argv[])
   char c = ' ';
   while (c != 0x1B)
   {
+    // Get the next character in.
     c = loopback_getc(fp);
-    loopback_putc(c, fp);
-    printf("%02X ", (uint16_t)c);
-    // putchar(c);
-    // if (c == '\r')
-    //   putchar('\n');    // auto line-feed w/carriage return
+
+    // Process.
+    chell_ProcessChar(c, cb);
   }
 
   loopback_close(fp);
