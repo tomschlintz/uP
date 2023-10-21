@@ -14,6 +14,7 @@
  * 
  */
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -22,12 +23,6 @@
 #include "chell.h"
 
 #define STAND_ALONE   // define to include a main() function, for stand-alone testing
-
-#define MAX_STR 64      // maximum command or parameter string expected, for sizing arrays.
-#define MAX_PARAMETERS 16   // maximum parameter strings - note this will multiply by MAX_STR when allocating string storage!
-#define MAX_TOTAL_COMMAND_CHARS ((MAX_PARAMETERS+1) * MAX_STR + MAX_PARAMETERS)   // string length enough for command and parameters, including a space between each
-#define MAX_HISTORY 16  // depth of recall history
-#define MAX_COMMANDS 64 // maximum number of commands that may be registered
 
 typedef struct
 {
@@ -39,11 +34,16 @@ typedef struct
     char const * const * hints;
 } Cmd_struct;
 
+#ifndef len
+    #define len(array) (sizeof(array)/sizeof(array[0]))
+#endif
+
 // Local prototypes.
-static bool processLine(char const * const line);
+static bool processLine(char * line);
 static void outChar(const char c);
+static void handle_unhandled(char const * const cmd, char const * const * param, int numParams);
 static void handle_help(char const * const cmd, char const * const * param, int numParams);
-static void cbPrintf(char * fmt, ...);
+static void shell_printf(char * fmt, ...);
 
 // File globals.
 static char g_outLineEnd[3] = {0};             // preferred line-end character(s) to output
@@ -94,7 +94,7 @@ bool chell_RegisterHandler(const char * cmd, void (*handler)(char const * const 
   {
     // Recursively call this to register the standard help handler. Flag initialized _first_ to avoid infinite recursion!
     g_helpInitialized = true;
-    chell_RegisterHandler("help", handle_help, NULL, NULL);
+    chell_RegisterHandler("help", handle_help, "this help message", NULL);
   }
 
   g_cmd[g_numRegCmds].cmd = cmd;
@@ -147,7 +147,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
   {
     // Register the built-in help handler. Must flag as initialized first, to avoid re-adding in register call.
     g_helpInitialized = true;
-    chell_RegisterHandler("help", handle_help, NULL, NULL);
+    chell_RegisterHandler("help", handle_help, "this help message", NULL);
   }
 
   // Ignore subsequent line-end characters if one already processed.
@@ -170,7 +170,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     // Handle backspace (0x08) or del (0x7F)
     if (idx > 0)
     {
-      cbPrintf("\x08 \x08");  // backspace, clear, backspace again
+      shell_printf("\x08 \x08");  // backspace, clear, backspace again
       idx--;
     }
   } else if ((c == 0x0D) || (c == 0x0A))
@@ -181,6 +181,9 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     buf[idx] = '\0';  // make sure we're terminated
     idx = 0;          // reset for next command
 
+    // Put a line between what was just entered and whatever output the response will be.
+    shell_printf(g_outLineEnd);
+
     // Parse and process string received.
     if (processLine(buf))
     {
@@ -190,7 +193,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     }
 
     // Prompt
-    cbPrintf(g_outLineEnd);
+    shell_printf(g_outLineEnd);
   } else if ((c >= ' ') && (c <= '~'))
   {
     // Otherwise buffer and echo any printable character. Don't allow index beyond buffer bytes - 1, to allow for NULL-terminator.
@@ -227,20 +230,70 @@ void chell_setOutLineEnd(const char * str)
 }
 
 /**
- * @brief Parses complete string received, then identifies and processes command, with parameters.
+ * @brief Check number of parameters, based on given criteria, show error and return false if bad.
  * 
- * @param line string received
+ * @param numGivenParams the number of parameters given
+ * @param numExpectedParams the number of parameters expected
+ * @return true if parameters are good, false if bad
+ */
+bool chell_confirmParameters(int numGivenParams, int numExpectedParams)
+{
+  if (numGivenParams < numExpectedParams)
+  {
+    shell_printf("*** You only gave me %d parameters, I need at least %d ***\n", numGivenParams, numExpectedParams);
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * @brief Parses complete string received, then identifies and processes command, with parameters.
+ * This will change the line buffer passed, as it is parsed.
+ * 
+ * @param line string received - modified when parsed by strtok()
  * @return true 
  * @return false 
  */
-static bool processLine(char const * const line)
+static bool processLine(char * line)
 {
-  printf("Processing line \"%s\"\n", line);
+    char * p;
+    char * cmd;                             // command string (first parsed string)
+    char const * param[MAX_PARAMETERS];     // list of parameters parsed for command line
+    int numParams = 0;
 
+    // Nothing to parse if empty string, or contains only line-end characters.
+    if ((line == NULL) || (line[0] == '\0'))
+        return false;
 
+    // Split the copied string into command and parameters by inserting
+    // a NULL for each token, and assigning pointer to each. Note this does not
+    // add to the line passed, only replaces the token characters with NULL.
+    p = strtok(line, " ");
+    cmd = p;
+    int i;
+    for (i=0;i<len(param) && p!=NULL;i++)
+    {
+        p = strtok(NULL, " ");
+        if (p != NULL)
+        {
+            param[i] = p;
+            numParams++;
+        }
+    }
 
-  // command not valid: return failure.
-  return false;
+    // Loook for match in g_cmd table, and call handler if found.
+    for (i=0;i<len(g_cmd);i++)
+    {
+        if ((g_cmd[i].cmd != NULL) && (strcmp(cmd, g_cmd[i].cmd) == 0))
+        {
+            g_cmd[i].handler(cmd, param, numParams);
+            break;
+        }
+    }
+
+    if (i >= len(g_cmd))
+      handle_unhandled(cmd, param, numParams);
 }
 
 /**
@@ -264,11 +317,26 @@ static void outChar(const char c)
 }
 
 /**
+ * @brief Build-in default handler when no other handler found in command table.
+ * 
+ * @param cmd command string
+ * @param param list of pointers to parameter strings - use as param[0], param[1] ...
+ * @param numParams number of parameters parsed for this command
+ */
+static void handle_unhandled(char const * const cmd, char const * const * param, int numParams)
+{
+  (void)cmd;
+  (void)param;
+  (void)numParams;
+  shell_printf("*** Huh? ***%s", g_outLineEnd);
+}
+
+/**
  * @brief Built-in handler to display help on all register commands.
  * 
- * @param cmd command string, e.g. "move" - passed to all command handlers
- * @param param pointer to list of parameter strings - passed to all command handlers
- * @param numParams the number of parameter strings - passed to all command handlers
+ * @param cmd command string
+ * @param param list of pointers to parameter strings - use as param[0], param[1] ...
+ * @param numParams number of parameters parsed for this command
  */
 static void handle_help(char const * const cmd, char const * const * param, int numParams)
 {
@@ -276,22 +344,38 @@ static void handle_help(char const * const cmd, char const * const * param, int 
   (void)param;
   (void)numParams;
 
-  cbPrintf("Built %s %s. Commands:%s", __DATE__, __TIME__, g_outLineEnd);
+  shell_printf("%s===== Commands =====%s\n", g_outLineEnd, g_outLineEnd);
   int i;
   for (i=0;i<g_numRegCmds; i++)
-      cbPrintf("\t%s %s%s", g_cmd[i].cmd, g_cmd[i].help, g_outLineEnd);
+  {
+    char const * helpText = "";
+    if (g_cmd[i].help != NULL)
+      helpText = g_cmd[i].help;
+    shell_printf("  \"%s\" - %s%s", g_cmd[i].cmd, helpText, g_outLineEnd);
+  }
+}
+
+void handle_example(char const * const cmd, char const * const * param, int numParams)
+{
+  // Verify the correct number of parameters.
+  if (!chell_confirmParameters(numParams, 2))
+    return;
+
+  int val1 = atoi(param[0]);
+  int val2 = atoi(param[1]);
+  shell_printf("The sum of %d + %d = %d\r\n", val1, val2, val1 + val2);
 }
 
 /**
- * @brief Format and use call-back to output to stream.
+ * @brief Format and output to stream, using call-back given.
  * 
  * @param fmt 
  * @param ... 
  */
-static void cbPrintf(char * fmt, ...)
+void shell_printf(char * fmt, ...)
 {
   va_list args;
-  char str[MAX_SHELL_STRING+1];
+  char str[MAX_TOTAL_COMMAND_CHARS+1];
 
   va_start(args, fmt);
   vsprintf(str, fmt, args);
@@ -337,6 +421,8 @@ int main(int argc, char * argv[])
 
   printf("Using serial I/O through \"%s\"\n", devstr);
 
+  chell_RegisterHandler("add", handle_example, "add two numbers", NULL);
+
   char c = ' ';
   while (c != 0x1B)
   {
@@ -349,7 +435,7 @@ int main(int argc, char * argv[])
 
   loopback_close(fp);
 
-  puts("\nDone.");
+  shell_printf(g_outLineEnd);
   return 0;
 }
 #endif  // STAND_ALONE
