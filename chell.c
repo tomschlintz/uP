@@ -285,12 +285,12 @@ static bool processLine(char * line)
     // Split the copied string into command and parameters by inserting
     // a NULL for each token, and assigning pointer to each. Note this does not
     // add to the line passed, only replaces the token characters with NULL.
-    p = strtok(line, " ");
+    p = strtok(line, " ,");
     cmd = p;
     int i;
     for (i=0;i<len(param) && p!=NULL;i++)
     {
-        p = strtok(NULL, " ");
+        p = strtok(NULL, " ,");
         if (p != NULL)
         {
             param[i] = p;
