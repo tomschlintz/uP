@@ -41,12 +41,14 @@ typedef struct
 // Local prototypes.
 static bool processLine(char * line);
 static void outChar(const char c);
+static bool isEmptyLine(const char * line);
 static void handle_unhandled(char const * const cmd, char const * const * param, int numParams);
 static void handle_help(char const * const cmd, char const * const * param, int numParams);
-static void shell_printf(char * fmt, ...);
+static void chell_printf(char * fmt, ...);
 
 // File globals.
-static char g_outLineEnd[3] = {0};             // preferred line-end character(s) to output
+static char g_outLineEnd[3] = {0};              // preferred line-end character(s) to output
+static char g_prompt[MAX_SHELL_PROMPT+1] = {0}; // prompt to return to outgoing stream, or empty string if none
 static bool g_lineEndSet = false;               // set true only after line-end initialized
 static bool g_helpInitialized = false;          // help command list has been initialized, to include help handler
 static Cmd_struct g_cmd[MAX_COMMANDS] = { 0 };  // list of commands, as registered
@@ -170,7 +172,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     // Handle backspace (0x08) or del (0x7F)
     if (idx > 0)
     {
-      shell_printf("\x08 \x08");  // backspace, clear, backspace again
+      chell_printf("\x08 \x08");  // backspace, clear, backspace again
       idx--;
     }
   } else if ((c == 0x0D) || (c == 0x0A))
@@ -181,19 +183,22 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     buf[idx] = '\0';  // make sure we're terminated
     idx = 0;          // reset for next command
 
-    // Put a line between what was just entered and whatever output the response will be.
-    shell_printf(g_outLineEnd);
-
-    // Parse and process string received.
-    if (processLine(buf))
+    if (!isEmptyLine(buf))
     {
-      // Track successful command history.
-      memcpy(history[hidx], buf, sizeof(history[0]));
-      hidx = (hidx + 1) % MAX_HISTORY;
+      // Put a line between what was just entered and whatever output the response will be, unless CR only entered.
+      chell_printf(g_outLineEnd);
+
+      // Parse and process string received.
+      if (processLine(buf))
+      {
+        // Track successful command history.
+        memcpy(history[hidx], buf, sizeof(history[0]));
+        hidx = (hidx + 1) % MAX_HISTORY;
+      }
     }
 
     // Prompt
-    shell_printf(g_outLineEnd);
+    chell_printf("%s%s", g_outLineEnd, g_prompt);
   } else if ((c >= ' ') && (c <= '~'))
   {
     // Otherwise buffer and echo any printable character. Don't allow index beyond buffer bytes - 1, to allow for NULL-terminator.
@@ -230,6 +235,17 @@ void chell_setOutLineEnd(const char * str)
 }
 
 /**
+ * @brief Set a prompt string to feed back to the outgoing stream.
+ * 
+ * @param str prompt string, as "> "
+ */
+void chell_setPrompt(const char * str)
+{
+  memset(g_prompt, 0, sizeof(g_prompt));
+  strncpy(g_prompt, str, MAX_SHELL_PROMPT);
+}
+
+/**
  * @brief Check number of parameters, based on given criteria, show error and return false if bad.
  * 
  * @param numGivenParams the number of parameters given
@@ -240,7 +256,7 @@ bool chell_confirmParameters(int numGivenParams, int numExpectedParams)
 {
   if (numGivenParams < numExpectedParams)
   {
-    shell_printf("*** You only gave me %d parameters, I need at least %d ***\n", numGivenParams, numExpectedParams);
+    chell_printf("*** You only gave me %d parameters, I need at least %d ***\n", numGivenParams, numExpectedParams);
     return false;
   }
 
@@ -317,6 +333,23 @@ static void outChar(const char c)
 }
 
 /**
+ * @brief Reveals if given line is "empty".
+ * Line is considered empty if it has no string to try to process.
+ * 
+ * @param line line string to check
+ * @return true if line has no command to process, i.e., is "empty"
+ */
+static bool isEmptyLine(const char * line)
+{
+  int len = strlen(line);
+  int i;
+  for (i=0;i<len;i++)
+    if ((line[i] != '\r') && (line[i] != '\n') && (line[i] != ' '))
+      return false;
+  return true;
+}
+
+/**
  * @brief Build-in default handler when no other handler found in command table.
  * 
  * @param cmd command string
@@ -328,7 +361,7 @@ static void handle_unhandled(char const * const cmd, char const * const * param,
   (void)cmd;
   (void)param;
   (void)numParams;
-  shell_printf("*** Huh? ***%s", g_outLineEnd);
+  chell_printf("*** Huh? ***%s", g_outLineEnd);
 }
 
 /**
@@ -344,14 +377,14 @@ static void handle_help(char const * const cmd, char const * const * param, int 
   (void)param;
   (void)numParams;
 
-  shell_printf("%s===== Commands =====%s\n", g_outLineEnd, g_outLineEnd);
+  chell_printf("%s===== Commands =====%s\n", g_outLineEnd, g_outLineEnd);
   int i;
   for (i=0;i<g_numRegCmds; i++)
   {
     char const * helpText = "";
     if (g_cmd[i].help != NULL)
       helpText = g_cmd[i].help;
-    shell_printf("  \"%s\" - %s%s", g_cmd[i].cmd, helpText, g_outLineEnd);
+    chell_printf("  \"%s\" - %s%s", g_cmd[i].cmd, helpText, g_outLineEnd);
   }
 }
 
@@ -363,7 +396,7 @@ void handle_example(char const * const cmd, char const * const * param, int numP
 
   int val1 = atoi(param[0]);
   int val2 = atoi(param[1]);
-  shell_printf("The sum of %d + %d = %d\r\n", val1, val2, val1 + val2);
+  chell_printf("The sum of %d + %d = %d\r\n", val1, val2, val1 + val2);
 }
 
 /**
@@ -372,7 +405,7 @@ void handle_example(char const * const cmd, char const * const * param, int numP
  * @param fmt 
  * @param ... 
  */
-void shell_printf(char * fmt, ...)
+void chell_printf(char * fmt, ...)
 {
   va_list args;
   char str[MAX_TOTAL_COMMAND_CHARS+1];
@@ -395,7 +428,10 @@ void shell_printf(char * fmt, ...)
 
 #include "loopback.h" // for testing with a loop-back connection
 
-// Loop-back serial device strings.
+// Loop-back serial device strings. This is for stand-alone testing. The caller
+// into this library is expected to both provide characters from an incoming stream
+// and provide a call-back to allow returning characters to an outgoing stream. This library
+// does not do streams, it just processes incoming characters and parses and processes commands.
 #ifdef __linux__
 char const * const devstr = "/dev/pts/1";
 #else
@@ -422,6 +458,7 @@ int main(int argc, char * argv[])
   printf("Using serial I/O through \"%s\"\n", devstr);
 
   chell_RegisterHandler("add", handle_example, "add two numbers", NULL);
+  chell_setPrompt("> ");
 
   char c = ' ';
   while (c != 0x1B)
@@ -435,7 +472,7 @@ int main(int argc, char * argv[])
 
   loopback_close(fp);
 
-  shell_printf(g_outLineEnd);
+  chell_printf(g_outLineEnd);
   return 0;
 }
 #endif  // STAND_ALONE
