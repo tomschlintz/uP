@@ -265,7 +265,10 @@ bool chell_confirmParameters(int numGivenParams, int numExpectedParams)
 
 /**
  * @brief Parses complete string received, then identifies and processes command, with parameters.
- * This will change the line buffer passed, as it is parsed.
+ * This will change the line buffer passed, as it is parsed. In fact, the pointers to the command and each
+ * parameter string are actually just pointers into the line string. This works for a single-threaded system,
+ * as long as the command and parameter strings are used by the handler before any more characters are processed,
+ * since this begins to overwrite that line again.
  * 
  * @param line string received - modified when parsed by strtok()
  * @return true 
@@ -310,6 +313,84 @@ static bool processLine(char * line)
 
     if (i >= len(g_cmd))
       handle_unhandled(cmd, param, numParams);
+}
+
+/**
+ * @brief Look for escape sequences: known strings starting with an escape character (0x1B).
+ * These include up, down, left and right arrow keys, and various function keys.
+ * The return value indicates the state of gathering an escape sequence:
+ *   -1 : processing a sequence, not complete : caller should discard the incoming character
+ *    0 : no escape seuence is being gathered : caller should process the character as normal
+ *  1-n : an escape sequence just recognized : caller should take action based on the return value, ignoring incoming character
+ * 
+ * @param c next character to process
+ * @return int 0 if not collecting escape characters, -1 if in process of collecting an escape sequence, or 1, 2, 3, 4 for up/down/left/right escape detected
+ */
+int processEscapes(char c)
+{
+  char const * const kEscapes[] =
+  {
+    "\x1B\x5b\x41",     // up arrow
+    "\x1B\x5b\x42",     // down arrow
+    "\x1B\x5b\x43",     // right arrow
+    "\x1B\x5b\x44",     // left arrow
+    "\x1B\x4F\x52",     // F3
+  };
+  static char escapeChars[3] = { 0 };
+  int numEscapes = sizeof(kEscapes) / sizeof(kEscapes[0])
+
+  if (c == 0x1B)
+  {
+    bool doubleEscape = escapeChars[0] == 0x1B;
+    memset(escapeChars, 0, sizeof(escapeChars));
+
+    if (doubleEscape)
+    {
+      // If two escapes in a row (one already buffered), tell caller to process eescape as a regular character,
+      // and ignore it here.
+      return 0;
+    } else
+    {
+      // Otherwise start buffer with it here, and tell caller that we're currently gathering a possible escape sequence.
+      escapeChars[0] = c;
+      return -1;
+    }
+  } else
+  {
+    if (escapeChars[1] == 0)
+    {
+      // If no  match for 2nd character in our escape table, then reset and tell call to treat as a regular character.
+      int i;
+      for (i=0;i<numEscapes;i++)
+        if (kEscapes[i][1] == c)
+          break;
+      if (i >= numEscapes)
+      {
+        memset(escapeChars, 0, sizeof(escapeChars));
+        return 0;
+      }
+
+      // Otherwise buffer and tell caller we're working on an escape sequence.
+      escapeChars[1] = c;   // 2nd character
+      return -1;
+    } else
+    {
+      // If match to known sequences, reset and return 1-based index for matched sequence.
+      int i;
+      for (i=0;i<numEscapes;i++)
+      {
+        if (memcmp(escapeChars, kEscapes, 3) == 0)
+        {
+          memset(escapeChars, 0, sizeof(escapeChars));
+          return i + 1;
+        }
+      }
+
+      // If no match to known sequences, reset, and tell caller to ignore the character (treat as valid escape, just now handled here).
+      memset(escapeChars, 0, sizeof(escapeChars));
+      return 0;
+    }
+  }
 }
 
 /**
