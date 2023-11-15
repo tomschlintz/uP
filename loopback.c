@@ -7,15 +7,25 @@
  * 
  * @copyright Copyright (c) 2023
  * 
+ * Testing using a PC:
+ * For Linux, we can't just capture keystrokes from the terminal, since the terminal itself buffers input
+ * until a carriage-return (enter key), and so this won't let us receive characters one by one.
+ * So, for Linux, we instead use the "socat" command (may require installing) to provide a software
+ * serial loop-back, then use a terminal monitor ("screen" works for this, but may require installing)
+ * to input characters and observe the reponses. The "loopback.sh" and "unlink_loopback.sh" scripts
+ * are provided to help set this up and tear it down.
+ * 
  */
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
+#include <io.h>
+#include <fcntl.h>
 #include "loopback.h"
 
 // Local prototypes.
-static void reset(FILE * fp);
+// static void reset(int fd);
 
 /**
  * @brief Open the serial port indicated by the given string.
@@ -23,9 +33,9 @@ static void reset(FILE * fp);
  * This is to allow resetting the port by simply closing, then calling this with NULL.
  * 
  * @param devStr serial device to open, as "/dev/pts/1"
- * @return FILE* pointer to file stream opened, or NULL on fail
+ * @return integer file descriptor for stream opened, or -1 on fail
  */
-FILE * loopback_open(const char * devStr)
+int loopback_open(const char * devStr)
 {
   static char _devStr[1024];
   // Open stream for read/write, so we can use it both as 
@@ -33,48 +43,36 @@ FILE * loopback_open(const char * devStr)
   if (devStr != NULL)
     strcpy(_devStr, devStr);  // if non-null string passed, save it in case of re-open later
 
+  int fd = _open(_devStr, _O_RDWR | _O_BINARY);
+
   // Open open or reopen device string given or saved from last time.
-  return fopen(_devStr, "r+");
+  return fd;
 }
 
 /**
  * @brief Close the given serial stream. Ignores if NULL.
  * 
- * @param fp pointer to file stream to close
+ * @param fd file descriptor for file stream to close
  */
-void loopback_close(FILE * fp)
+void loopback_close(int fd)
 {
-  // Close FILE pointer if not NULL.
-  if (fp != NULL)
-    fclose(fp);
+  // Close FILE pointer if not invalid.
+  if (fd >= 0)
+    close(fd);
 }
 
 /**
  * @brief Wait for and get the next character from the serial stream. 
  * 
- * @param fp pointer to file stream
+ * @param fd file descriptor for file stream to close
  * @return character read
  */
-char loopback_getc(FILE * fp)
+char loopback_get(int fd)
 {
-  if (fp != NULL)
+  if (fd >= 0)
   {
-    char c = -1;
-    while (c == -1)
-    {
-      c = fgetc(fp);
-      if (c < 0)
-      {
-        // if (feof(fp))
-        //   putchar('o'); // EOF
-        // else if (ferror(fp))
-        //   putchar('x'); // error
-        // else
-        //   putchar('?'); // unknown fail
-        reset(fp);
-        continue;
-      }
-    }
+    char c;
+    read(fd, &c, 1);
     return c;
   }
   return '\0';
@@ -85,15 +83,14 @@ char loopback_getc(FILE * fp)
  * Flushes character immediately to the stream.
  * 
  * @param c character to write
- * @param fp pointer to a file stream
+ * @param fd file descriptor for file stream to close
  */
-void loopback_putc(char c, FILE * fp)
+void loopback_put(char c, int fd)
 {
   // Poop it out and flush.
-  if (fp != NULL)
+  if (fd >= 0)
   {
-    fputc(c, fp);
-    fflush(fp);
+    write(fd, &c, 1);
   }
 }
 
@@ -103,40 +100,12 @@ void loopback_putc(char c, FILE * fp)
  * does not change, but it seems to "unlatch" the port when it starts returning FFFFFFFF
  * continuously for some reason. clearerr() does not seem to fix.
  * 
- * @param fp pointer to file stream to reset
+ * @param fd file descriptor for file stream to close
  */
-static void reset(FILE * fp)
-{
-  loopback_close(fp);
-  loopback_open(NULL);
-}
-
-
-
-#ifdef STANDALONE
-int main(int argc, char * argv[])
-{
-  char const * const devstr = "/dev/pts/1";
-  FILE * fp = loopback_open(devstr);
-  if (fp == NULL)
-  {
-    printf("Failed to open \"%s\"\n", devstr);
-    return -1;
-  }
-
-  char c = ' ';
-  while (c != 0x1B)
-  {
-    c = loopback_getc(fp);
-    loopback_putc(c, fp);
-    printf("%02X ", (uint16_t)c);
-    // putchar(c);
-    // if (c == '\r')
-    //   putchar('\n');    // auto line-feed w/carriage return
-  }
-
-  loopback_close(fp);
-
-  return 1;
-}
-#endif // STANDALONE
+// static void reset(FILE * fp)
+// {
+//   // loopback_close(fp);
+//   // loopback_open(NULL);
+//   if (ferror(fp))
+//     clearerr(fp);
+// }

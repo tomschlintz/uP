@@ -26,8 +26,7 @@
 
 // DEBUG - use in place of return call to trace processEscapes(), below.
 #define traceReturn(rcode, escBuf) \
-{ \
-  printf("escapeChars: {%02X, %02X, %02X, %02X, %02X, %02X}, returning %d\n", escBuf[0], escBuf[1], escBuf[2], escBuf[3], escBuf[4], escBuf[5], rcode); \
+{ \printf("escapeChars: {%02X, %02X, %02X, %02X, %02X, %02X}, returning %d\n", escBuf[0], escBuf[1], escBuf[2], escBuf[3], escBuf[4], escBuf[5], rcode); \
   return rcode; \
 }
 
@@ -829,6 +828,8 @@ void chell_printf(char * fmt, ...)
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <io.h>
+#include <fcntl.h>
 
 #include "loopback.h" // for testing with a loop-back connection
 
@@ -839,21 +840,32 @@ void chell_printf(char * fmt, ...)
 #ifdef __linux__
 char const * const devstr = "/dev/pts/1";
 #else
-char const * const devstr = "COM1";
+char const * const devstr = "COM6";
 #endif // __linux__
 
-FILE * fp = NULL;
+int fd = -1;
 
 // Use loopback out as our output call-back.
-int cb(int c) { loopback_putc(c, fp); }
+int cb(int c) { loopback_put(c, fd); }
 
 /**
  * @brief Main entry function, for testing via command-line.
  */
 int main(int argc, char * argv[])
 {
-  fp = loopback_open(devstr);
-  if (fp == NULL)
+  // int fd = _open(devstr, _O_RDWR | _O_BINARY);
+
+  // char x = '\0';
+  // while (x != '*')
+  // {
+  //   read(fd, &x, 1);
+  //   write(fd, &x, 1);
+  // }
+
+  // close(fd);
+
+  fd = loopback_open(devstr);
+  if (fd < 0)
   {
     printf("Failed to open \"%s\"\n", devstr);
     return -1;
@@ -875,7 +887,7 @@ int main(int argc, char * argv[])
   // // DEBUG: show key codes and escape sequences.
   // while(true)
   // {
-  //   char c = loopback_getc(fp);
+  //   char c = loopback_get(fd);
   //   if (c == '\r')
   //   {
   //     printf("\n");
@@ -887,7 +899,7 @@ int main(int argc, char * argv[])
   //   printf(" ");
   // }
 
-  printf("Using serial I/O through \"%s\"\n", devstr);
+  printf("Using serial I/O through \"%s\" fd=%d\n", devstr, fd);
 
   // Example use of registering handler and setting prompt.
   chell_RegisterHandler("add", handle_example, "add two numbers", NULL);
@@ -897,13 +909,13 @@ int main(int argc, char * argv[])
   while (c != '*')
   {
     // Get the next character in.
-    c = loopback_getc(fp);
+    c = loopback_get(fd);
 
     // Process.
     chell_ProcessChar(c, cb);
   }
 
-  loopback_close(fp);
+  loopback_close(fd);
 
   chell_printf(g_outLineEnd);
   return 0;

@@ -5,9 +5,9 @@
 
 // defines
 // prototypes
-FILE * loopback_open(const char * devStr);
-void loopback_close(FILE * fp);
-char loopback_getc(FILE * fp);
-void loopback_putc(char c, FILE * fp);
+int loopback_open(const char * devStr);
+void loopback_close(int fd);
+char loopback_get(int fd);
+void loopback_put(char c, int fd);
 
 #endif // LOOPBACK_H

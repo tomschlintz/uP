@@ -7,8 +7,9 @@
       "type": "cppdbg",
       "request": "launch",
       "program": "${workspaceFolder}/chell",
-      "args": ["/dev/pts/1"],
-      "cwd": "${workspaceFolder}"
+      // "args": ["/dev/pts/1"],
+      "cwd": "${workspaceFolder}",
+      // "preLaunchTask": "Win32Build",
     }
   ]
 }
