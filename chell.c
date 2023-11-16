@@ -7,6 +7,7 @@
  * Number of parameters, and parameter list. Automatically provide a "help" shell command, based on the help provided for each command registered.
  * 
  * FUTURE: also provide a call-back to provide parameter hints.
+ * FUTURE: also provide a "history" command handler by default.
  * 
  * Written in standard C and uses only standard library headers, minimum RAM, to allow integration into even the smallest projects.
  *
@@ -281,11 +282,15 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
       // Put a line between what was just entered and whatever output the response will be, unless CR only entered.
       chell_printf(g_outLineEnd);
 
+      // Save a copy of full line, before splitting into command and parameters.
+      char fullLine[MAX_TOTAL_COMMAND_CHARS+1];
+      strcpy(fullLine, lineBuf);
+
       // Parse and process string received.
       processLine(lineBuf);
 
       // Track history, including unhandled commands, as a circular ring buffer.
-      memcpy(histBuf[histIdx], lineBuf, sizeof(histBuf[0]));
+      memcpy(histBuf[histIdx], fullLine, sizeof(histBuf[0]));
       histIdx = (histIdx + 1) % MAX_HISTORY;
     }
 
@@ -339,7 +344,7 @@ bool chell_confirmParameters(int numGivenParams, int numExpectedParams)
 {
   if (numGivenParams < numExpectedParams)
   {
-    chell_printf("*** You only gave me %d parameters, I need at least %d ***\n", numGivenParams, numExpectedParams);
+    chell_printf("*** You only gave me %d parameter%s, I need at least %d ***\n", numGivenParams, (numGivenParams>1)?"s":"", numExpectedParams);
     return false;
   }
 
