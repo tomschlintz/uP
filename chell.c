@@ -54,6 +54,8 @@ enum
   ESC_F8,
   ESC_F9,
   ESC_DEL,
+  ESC_HOME,
+  ESC_END,
 };
 
 /**
@@ -439,6 +441,26 @@ static bool editLine(int extChar)
     editIdx++;
   }
 
+  // Handle home key.
+  else if (extChar == ESC_HOME)
+  {
+    while(editIdx > 0)
+    {
+      outChar('\x08');
+      editIdx--;
+    }
+  }
+
+  // Handle end key.
+  else if (extChar == ESC_END)
+  {
+    while (editIdx < lineIdx)
+    {
+      outChar(lineBuf[editIdx]);
+      editIdx++;
+    }
+  }
+
   // (FURTURE) Handle tab.
 
   // Handle standard (printable) characters.
@@ -621,10 +643,10 @@ static int processEscapes(char c)
   // than the alloted array size for each entry must padd with null(s).
   const char kEscapes[][6] =
   {
-    "\x1B\x5b\x41\x00\x00",     // up arrow
-    "\x1B\x5b\x42\x00\x00",     // down arrow
-    "\x1B\x5b\x43\x00\x00",     // right arrow
-    "\x1B\x5b\x44\x00\x00",     // left arrow
+    "\x1B\x5B\x41\x00\x00",     // up arrow
+    "\x1B\x5B\x42\x00\x00",     // down arrow
+    "\x1B\x5B\x43\x00\x00",     // right arrow
+    "\x1B\x5B\x44\x00\x00",     // left arrow
     "\x1B\x4F\x50\x00\x00",     // F1
     "\x1B\x4F\x51\x00\x00",     // F2
     "\x1B\x4F\x52\x00\x00",     // F3
@@ -634,7 +656,9 @@ static int processEscapes(char c)
     "\x1B\x5B\x31\x38\x7E",     // F7
     "\x1B\x5B\x31\x39\x7E",     // F8
     "\x1B\x5B\x32\x30\x7E",     // F9
-    "\x1B\x5b\x33\x7E\x00",     // delete
+    "\x1B\x5B\x33\x7E\x00",     // delete
+    "\x1B\x5B\x31\x7E\x00",     // home
+    "\x1B\x5B\x34\x7E\x00",     // end
   };
   static char escapeChars[sizeof(kEscapes[0])] = { 0 };
 
@@ -857,17 +881,6 @@ int cb(int c) { loopback_put(c, fd); }
  */
 int main(int argc, char * argv[])
 {
-  // int fd = _open(devstr, _O_RDWR | _O_BINARY);
-
-  // char x = '\0';
-  // while (x != '*')
-  // {
-  //   read(fd, &x, 1);
-  //   write(fd, &x, 1);
-  // }
-
-  // close(fd);
-
   fd = loopback_open(devstr);
   if (fd < 0)
   {
@@ -900,7 +913,7 @@ int main(int argc, char * argv[])
   //   printf("%02X", c);
   //   if ((c >= ' ') && (c <= '~'))
   //     printf("(%c)", c);
-  //   printf(" ");
+  //   puts("");
   // }
 
   printf("Using serial I/O through \"%s\" fd=%d\n", devstr, fd);
