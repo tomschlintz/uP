@@ -671,6 +671,7 @@ static int processEscapes(char c)
     "\x1B\x4F\x51\x00\x00",     // F2
     "\x1B\x4F\x52\x00\x00",     // F3
     "\x1B\x4F\x53\x00\x00",     // F4
+    "\x00\x00\x00\x00\x00",     // dummy, for collisino with tab (\x09)
     "\x1B\x5B\x31\x35\x7E",     // F5
     "\x1B\x5B\x31\x37\x7E",     // F6
     "\x1B\x5B\x31\x38\x7E",     // F7
