@@ -48,6 +48,7 @@ enum
   ESC_F2,
   ESC_F3,
   ESC_F4,
+  ESC_TAB = 9,  // not actually an escape sequence, but overlaps our enumeration
   ESC_F5,
   ESC_F6,
   ESC_F7,
@@ -85,6 +86,7 @@ static bool processLine(char * line);
 static int processEscapes(char c);
 static void outChar(const char c);
 static bool isEmptyLine(const char * line);
+static int uniquePartialMatch(const char * str);
 static void handle_unhandled(char const * const cmd, char const * const * param, int numParams);
 static void handle_help(char const * const cmd, char const * const * param, int numParams);
 static void chell_printf(char * fmt, ...);
@@ -461,7 +463,25 @@ static bool editLine(int extChar)
     }
   }
 
-  // (FURTURE) Handle tab.
+  // Handle tab, if editing at end of line.
+  else if ((extChar == ESC_TAB) && (editIdx == lineIdx))
+  {
+    int idx = uniquePartialMatch(lineBuf);
+    if (idx >= 0)
+    {
+      // Characters given so far uniquely identify a known command - complete it.
+      int len = strlen(g_cmd[idx].cmd);
+      while(editIdx < len)
+      {
+        lineBuf[lineIdx] = g_cmd[idx].cmd[lineIdx];
+        outChar(lineBuf[editIdx]);
+        editIdx++;
+        lineIdx++;
+      }
+    }
+  }
+
+  // (FUTURE) handle ctrl-right, ctrl-left to skip words
 
   // Handle standard (printable) characters.
   else if ((extChar >= ' ') && (extChar <= '~'))
@@ -779,6 +799,32 @@ static bool isEmptyLine(const char * line)
     if ((line[i] != '\r') && (line[i] != '\n') && (line[i] != ' '))
       return false;
   return true;
+}
+
+/**
+ * @brief Look for a partial (or full) match of the given string to exactly
+ * one registered handler command. (FUTURE - also do constant string parameters?)
+ * 
+ * @param str partial line to match
+ * @return index of handler structure whose command string at least partially matches, -1 if no or multiple matches
+ */
+static int uniquePartialMatch(const char * str)
+{
+  int len = strlen(str);
+  int midx = -1;
+  int i;
+  for (i=0;i<g_numRegCmds;i++)
+  {
+    if (strncmp(str, g_cmd[i].cmd, len) == 0)
+    {
+      if (midx != -1)
+        return -1;  // multiple matches
+      midx = i;
+    }
+  }
+
+  // Return index found, or -1 if none.
+  return midx;
 }
 
 /**
