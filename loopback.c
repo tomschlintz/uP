@@ -20,7 +20,6 @@
 #include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
-#include <io.h>
 #include <fcntl.h>
 #include "loopback.h"
 
@@ -43,7 +42,7 @@ int loopback_open(const char * devStr)
   if (devStr != NULL)
     strcpy(_devStr, devStr);  // if non-null string passed, save it in case of re-open later
 
-  int fd = _open(_devStr, _O_RDWR | _O_BINARY);
+  int fd = open(_devStr, O_RDWR | O_NOCTTY);
 
   // Open open or reopen device string given or saved from last time.
   return fd;

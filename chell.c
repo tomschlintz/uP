@@ -833,7 +833,6 @@ void chell_printf(char * fmt, ...)
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <io.h>
 #include <fcntl.h>
 
 #include "loopback.h" // for testing with a loop-back connection
@@ -843,7 +842,7 @@ void chell_printf(char * fmt, ...)
 // and provide a call-back to allow returning characters to an outgoing stream. This library
 // does not do streams, it just processes incoming characters and parses and processes commands.
 #ifdef __linux__
-char const * const devstr = "/dev/pts/1";
+char const * const devstr = "/dev/pts/5";
 #else
 char const * const devstr = "COM6";
 #endif // __linux__
