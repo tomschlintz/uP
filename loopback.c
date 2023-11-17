@@ -23,6 +23,11 @@
 #include <fcntl.h>
 #include "loopback.h"
 
+#ifdef __linux__
+#else
+#define O_NOCTTY _O_BINARY
+#endif // __linux__
+
 // Local prototypes.
 // static void reset(int fd);
 
