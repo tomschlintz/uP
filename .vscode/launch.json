@@ -6,7 +6,7 @@
       "name": "C Launch",
       "type": "cppdbg",
       "request": "launch",
-      "program": "${workspaceFolder}/chell",
+      "program": "${workspaceFolder}/uP.exe",
       // "args": ["/dev/pts/1"],
       "cwd": "${workspaceFolder}",
       // "preLaunchTask": "Win32Build",

@@ -1,5 +1,5 @@
-#ifndef CHELL_H
-#define CHELL_H
+#ifndef UP_H
+#define UP_H
 
 // Defines. Some or all of these may be adjusted down to save RAM, or up to accommodate larger strings or number of parameters.
 #define MAX_STR 16          ///< maximum command or parameter string expected, for sizing arrays.
@@ -10,10 +10,10 @@
 #define MAX_SHELL_PROMPT 16 ///< maximum characters allowed for prompt string
 
 // Prototypes.
-bool chell_RegisterHandler(const char * cmd, void (*handler)(char const * const cmd, char const * const * param, int numParams), const char * help, char const * const * hints);
-char * chell_ProcessChar(const char c, int (*cb_out)(int c));
-void chell_setOutLineEnd(const char * str);
-void chell_setPrompt(const char * str);
-bool chell_confirmParameters(int numGivenParams, int numExpectedParams);
+bool uP_RegisterHandler(const char * cmd, void (*handler)(char const * const cmd, char const * const * param, int numParams), const char * help, char const * const * hints);
+char * uP_ProcessChar(const char c, int (*cb_out)(int c));
+void uP_setOutLineEnd(const char * str);
+void uP_setPrompt(const char * str);
+bool uP_confirmParameters(int numGivenParams, int numExpectedParams);
 
-#endif  // CHELL_H
+#endif  // UP_H

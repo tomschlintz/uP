@@ -11,7 +11,7 @@
         "-g",
         "${workspaceFolder}/*.c",
         "-o",
-        "${fileDirname}/${fileBasenameNoExtension}"
+        "${fileDirname}/uP"
       ],
       "options":
       {
@@ -36,7 +36,7 @@
           "-g",
           "${workspaceFolder}\\*.c",
           "-o",
-          "${fileDirname}\\${fileBasenameNoExtension}.exe"
+          "${fileDirname}\\uP.exe"
       ],
       "options": {
           "cwd": "${fileDirname}"

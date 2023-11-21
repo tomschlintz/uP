@@ -1,9 +1,9 @@
 /**
- * @file chell.c
+ * @file uP.c
  * @author Tom Gordon
- * @brief Contains processChar(), which accepts a character from stdin and returns a character for stdout (or uses a call-back).
+ * @brief Stream command-line handler, which accepts a character from stdin and returns a character for stdout (using a call-back).
  * Provides a full-featured, Linux-style shell interface, including handling of backspace, function and arrow keys for line navigation and line recall.
- * Allows registering of shell commands, including progressive help and function handling for each. Each handler will receive the command string,
+ * Allows registering of shell commands, including help and function handling for each. Each handler will receive the command string,
  * Number of parameters, and parameter list. Automatically provide a "help" shell command, based on the help provided for each command registered.
  * 
  * FUTURE: also provide a call-back to provide parameter hints.
@@ -11,7 +11,7 @@
  * 
  * Written in standard C and uses only standard library headers, minimum RAM, to allow integration into even the smallest projects.
  *
- * @copyright Copyright (c) 2023
+ * @copyright Copyright (c) 2023, Gordon Innovations
  * 
  */
 
@@ -21,7 +21,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
-#include "chell.h"
+#include "uP.h"
 
 #define STAND_ALONE   // define to include a main() function, for stand-alone testing
 
@@ -85,7 +85,7 @@ static void outChar(const char c);
 static bool isEmptyLine(const char * line);
 static void handle_unhandled(char const * const cmd, char const * const * param, int numParams);
 static void handle_help(char const * const cmd, char const * const * param, int numParams);
-static void chell_printf(char * fmt, ...);
+static void uP_printf(char * fmt, ...);
 
 // File globals.
 static char g_outLineEnd[3] = {0};              // preferred line-end character(s) to output
@@ -104,7 +104,7 @@ static int lastChar = -1;                       ///< previous character editted 
 static char histBuf[MAX_HISTORY][MAX_TOTAL_COMMAND_CHARS+1] = { 0 };  ///< command history, as circular string buffer
 static int histIdx = 0;                                               ///< next index to fill in circular history string buffer
 
-bool chell_RegisterHandler(const char * cmd, void (*handler)(char const * const cmd, char const * const * param, int numParams), const char * help, char const * const * hints)
+bool uP_RegisterHandler(const char * cmd, void (*handler)(char const * const cmd, char const * const * param, int numParams), const char * help, char const * const * hints)
 {
   //  a) One full help string, which gets displayed when "help" shows all the commands.
   //  b) A list of pointers to help strings (null-termminated) that allows guessing the next parameter from what the user starts typing, with tab.
@@ -143,7 +143,7 @@ bool chell_RegisterHandler(const char * cmd, void (*handler)(char const * const 
   {
     // Recursively call this to register the standard help handler. Flag initialized _first_ to avoid infinite recursion!
     g_helpInitialized = true;
-    chell_RegisterHandler("help", handle_help, "this help message", NULL);
+    uP_RegisterHandler("help", handle_help, "this help message", NULL);
   }
 
   g_cmd[g_numRegCmds].cmd = cmd;
@@ -166,7 +166,7 @@ bool chell_RegisterHandler(const char * cmd, void (*handler)(char const * const 
  * @param cb_out call-back to stdout stream - putchar works nicely, if available
  * @return char* ASCIIZ string received, or empty string if complete string and line-end not received yet
  */
-char * chell_ProcessChar(const char c, int (*cb_out)(int c))
+char * uP_ProcessChar(const char c, int (*cb_out)(int c))
 {
   const char kUpArrowEscape[] = "\x1B\x5b\x41";
   const char kDownArrowEscape[] = "\x1B\x5b\x42";
@@ -195,14 +195,14 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
   {
     // Register the built-in help handler. Must flag as initialized first, to avoid re-adding in register call.
     g_helpInitialized = true;
-    chell_RegisterHandler("help", handle_help, "this help message", NULL);
+    uP_RegisterHandler("help", handle_help, "this help message", NULL);
   }
 
   // Handle ctl-C.
   if (c == '\03')
   {
     // Output "^C", advance line and show prompt.
-    chell_printf("^C%s%s", g_outLineEnd, g_prompt);
+    uP_printf("^C%s%s", g_outLineEnd, g_prompt);
 
     // Reset line buffer and edit statics.
     lineBuf[0] = '\0';
@@ -241,7 +241,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
       clearLine();  // clear current
       strcpy(lineBuf, histBuf[recallIdx]);  // set to recalled history
       lineIdx = strlen(lineBuf);    // set index to length of string recalled
-      chell_printf(lineBuf);  // output back to stdout stream, via call-back
+      uP_printf(lineBuf);  // output back to stdout stream, via call-back
       return lineBuf; // return line recalled
     case ESC_DOWN_ARROW:
       // Nothing to wind forward to, if we haven't recalled any history yet,
@@ -261,7 +261,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
       clearLine();  // clear current
       strcpy(lineBuf, histBuf[recallIdx]);  // set to recalled history
       lineIdx = strlen(lineBuf);    // set index to length of string recalled
-      chell_printf(lineBuf);  // output back to stdout stream, via call-back
+      uP_printf(lineBuf);  // output back to stdout stream, via call-back
       return lineBuf; // return line recalled
   }
 
@@ -280,7 +280,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     if (!isEmptyLine(lineBuf))
     {
       // Put a line between what was just entered and whatever output the response will be, unless CR only entered.
-      chell_printf(g_outLineEnd);
+      uP_printf(g_outLineEnd);
 
       // Save a copy of full line, before splitting into command and parameters.
       char fullLine[MAX_TOTAL_COMMAND_CHARS+1];
@@ -295,7 +295,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
     }
 
     // Prompt
-    chell_printf("%s%s", g_outLineEnd, g_prompt);
+    uP_printf("%s%s", g_outLineEnd, g_prompt);
   }
 
   // Return any pending output characters, otherwise return an empty string.
@@ -316,7 +316,7 @@ char * chell_ProcessChar(const char c, int (*cb_out)(int c))
  * 
  * @param c preferred line-end characters, max two characters
  */
-void chell_setOutLineEnd(const char * str)
+void uP_setOutLineEnd(const char * str)
 {
   memset(g_outLineEnd, 0, sizeof(g_outLineEnd));      // pre-clear string
   strncpy(g_outLineEnd, str, sizeof(g_outLineEnd)-1); // copy up to two characters for line-end
@@ -327,7 +327,7 @@ void chell_setOutLineEnd(const char * str)
  * 
  * @param str prompt string, as "> "
  */
-void chell_setPrompt(const char * str)
+void uP_setPrompt(const char * str)
 {
   memset(g_prompt, 0, sizeof(g_prompt));
   strncpy(g_prompt, str, MAX_SHELL_PROMPT);
@@ -340,11 +340,11 @@ void chell_setPrompt(const char * str)
  * @param numExpectedParams the number of parameters expected
  * @return true if parameters are good, false if bad
  */
-bool chell_confirmParameters(int numGivenParams, int numExpectedParams)
+bool uP_confirmParameters(int numGivenParams, int numExpectedParams)
 {
   if (numGivenParams < numExpectedParams)
   {
-    chell_printf("*** You only gave me %d parameter%s, I need at least %d ***\n", numGivenParams, (numGivenParams>1)?"s":"", numExpectedParams);
+    uP_printf("*** You only gave me %d parameter%s, I need at least %d ***\n", numGivenParams, (numGivenParams>1)?"s":"", numExpectedParams);
     return false;
   }
 
@@ -404,7 +404,7 @@ static bool editLine(int extChar)
       removeCharAtIndex(lineBuf, editIdx);
 
       // Adjust output to terminal.
-      chell_printf("\x08%s \x08", &lineBuf[editIdx]);   // for output, back-track and rewrite everything after the backspace
+      uP_printf("\x08%s \x08", &lineBuf[editIdx]);   // for output, back-track and rewrite everything after the backspace
       lineIdx--;  // adjust to indicate the shorter line
       for (i=editIdx;i<lineIdx;i++)
         outChar('\x08');  // move output cursor from end of line back to back-spaced location
@@ -418,7 +418,7 @@ static bool editLine(int extChar)
     if (removeCharAtIndex(lineBuf, editIdx))
     {
       // Adjust output to terminal.
-      chell_printf("%s ", &lineBuf[editIdx]);
+      uP_printf("%s ", &lineBuf[editIdx]);
       for (i=editIdx;i<lineIdx;i++)
         outChar('\x08');  // move output cursor from end of line back to back-spaced location
       lineIdx--;  // adjust to indicate the shorter line
@@ -450,7 +450,7 @@ static bool editLine(int extChar)
       // Adjust output to terminal.
       outChar(extChar);
       editIdx++;
-      chell_printf("%s", &lineBuf[editIdx]);
+      uP_printf("%s", &lineBuf[editIdx]);
       lineIdx++;  // adjust to indicate longer line
       for (i=editIdx;i<lineIdx;i++)
         outChar('\x08');  // move output cursor from end of line back to back-spaced location
@@ -769,7 +769,7 @@ static void handle_unhandled(char const * const cmd, char const * const * param,
   (void)cmd;
   (void)param;
   (void)numParams;
-  chell_printf("*** Huh? ***%s", g_outLineEnd);
+  uP_printf("*** Huh? ***%s", g_outLineEnd);
 }
 
 /**
@@ -785,26 +785,26 @@ static void handle_help(char const * const cmd, char const * const * param, int 
   (void)param;
   (void)numParams;
 
-  chell_printf("%s===== Commands =====%s\n", g_outLineEnd, g_outLineEnd);
+  uP_printf("%s===== Commands =====%s\n", g_outLineEnd, g_outLineEnd);
   int i;
   for (i=0;i<g_numRegCmds; i++)
   {
     char const * helpText = "";
     if (g_cmd[i].help != NULL)
       helpText = g_cmd[i].help;
-    chell_printf("  \"%s\" - %s%s", g_cmd[i].cmd, helpText, g_outLineEnd);
+    uP_printf("  \"%s\" - %s%s", g_cmd[i].cmd, helpText, g_outLineEnd);
   }
 }
 
 void handle_example(char const * const cmd, char const * const * param, int numParams)
 {
   // Verify the correct number of parameters.
-  if (!chell_confirmParameters(numParams, 2))
+  if (!uP_confirmParameters(numParams, 2))
     return;
 
   int val1 = atoi(param[0]);
   int val2 = atoi(param[1]);
-  chell_printf("The sum of %d + %d = %d\r\n", val1, val2, val1 + val2);
+  uP_printf("The sum of %d + %d = %d\r\n", val1, val2, val1 + val2);
 }
 
 /**
@@ -813,7 +813,7 @@ void handle_example(char const * const cmd, char const * const * param, int numP
  * @param fmt 
  * @param ... 
  */
-void chell_printf(char * fmt, ...)
+void uP_printf(char * fmt, ...)
 {
   va_list args;
   char str[MAX_TOTAL_COMMAND_CHARS+1];
@@ -835,7 +835,7 @@ void chell_printf(char * fmt, ...)
 #include <stdbool.h>
 #include <fcntl.h>
 
-#include "loopback.h" // for testing with a loop-back connection
+#include "comms.h" // for testing with a loop-back connection
 
 // Loop-back serial device strings. This is for stand-alone testing. The caller
 // into this library is expected to both provide characters from an incoming stream
@@ -850,7 +850,7 @@ char const * const devstr = "COM6";
 int fd = -1;
 
 // Use loopback out as our output call-back.
-int cb(int c) { loopback_put(c, fd); }
+int cb(int c) { comms_put(c, fd); }
 
 /**
  * @brief Main entry function, for testing via command-line.
@@ -868,7 +868,7 @@ int main(int argc, char * argv[])
 
   // close(fd);
 
-  fd = loopback_open(devstr);
+  fd = comms_open(devstr);
   if (fd < 0)
   {
     printf("Failed to open \"%s\"\n", devstr);
@@ -878,7 +878,7 @@ int main(int argc, char * argv[])
   // // DEBUG: test processEscapes.
   // while (true)
   // {
-  //   char c = loopback_getc(fp);
+  //   char c = comms_getc(fp);
   //   int rcode = processEscapes(c);
   //   if (rcode == ESC_NO_ACTION)
   //     printf("%c", c);
@@ -891,7 +891,7 @@ int main(int argc, char * argv[])
   // // DEBUG: show key codes and escape sequences.
   // while(true)
   // {
-  //   char c = loopback_get(fd);
+  //   char c = comms_get(fd);
   //   if (c == '\r')
   //   {
   //     printf("\n");
@@ -903,25 +903,25 @@ int main(int argc, char * argv[])
   //   printf(" ");
   // }
 
-  printf("Using serial I/O through \"%s\" fd=%d\n", devstr, fd);
+  printf("Using serial I/O through \"%s\"\n", devstr);
 
   // Example use of registering handler and setting prompt.
-  chell_RegisterHandler("add", handle_example, "add two numbers", NULL);
-  chell_setPrompt("> ");
+  uP_RegisterHandler("add", handle_example, "add two numbers", NULL);
+  uP_setPrompt("> ");
 
   char c = ' ';
   while (c != '*')
   {
     // Get the next character in.
-    c = loopback_get(fd);
+    c = comms_get(fd);
 
     // Process.
-    chell_ProcessChar(c, cb);
+    uP_ProcessChar(c, cb);
   }
 
-  loopback_close(fd);
+  comms_close(fd);
 
-  chell_printf(g_outLineEnd);
+  uP_printf(g_outLineEnd);
   return 0;
 }
 #endif  // STAND_ALONE
