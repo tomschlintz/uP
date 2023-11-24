@@ -17,7 +17,7 @@
  * 
  * There are some subtle differences between Linux and Windows implementations, which are conditionally
  * compiled based on the definition of __linux__ at compile-time. Otherwise we strive to use the least
- * common denominator between the two OSes.
+ * common denominator between the two OSes, and Posix-compliance where possible.
  * 
  * For testing in Linux, recommend calling loopback.sh for using socat to set up a software serial loopback,
  * then calling screen /dev/pts/<#> for a simple terminal emulation.
