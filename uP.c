@@ -48,12 +48,15 @@ enum
   ESC_F2,
   ESC_F3,
   ESC_F4,
+  ESC_TAB = 9,  // not actually an escape sequence, but overlaps our enumeration
   ESC_F5,
   ESC_F6,
   ESC_F7,
   ESC_F8,
   ESC_F9,
   ESC_DEL,
+  ESC_HOME,
+  ESC_END,
 };
 
 /**
@@ -83,6 +86,7 @@ static bool processLine(char * line);
 static int processEscapes(char c);
 static void outChar(const char c);
 static bool isEmptyLine(const char * line);
+static int uniquePartialMatch(const char * str);
 static void handle_unhandled(char const * const cmd, char const * const * param, int numParams);
 static void handle_help(char const * const cmd, char const * const * param, int numParams);
 static void uP_printf(char * fmt, ...);
@@ -439,7 +443,45 @@ static bool editLine(int extChar)
     editIdx++;
   }
 
-  // (FURTURE) Handle tab.
+  // Handle home key.
+  else if (extChar == ESC_HOME)
+  {
+    while(editIdx > 0)
+    {
+      outChar('\x08');
+      editIdx--;
+    }
+  }
+
+  // Handle end key.
+  else if (extChar == ESC_END)
+  {
+    while (editIdx < lineIdx)
+    {
+      outChar(lineBuf[editIdx]);
+      editIdx++;
+    }
+  }
+
+  // Handle tab, if editing at end of line.
+  else if ((extChar == ESC_TAB) && (editIdx == lineIdx))
+  {
+    int idx = uniquePartialMatch(lineBuf);
+    if (idx >= 0)
+    {
+      // Characters given so far uniquely identify a known command - complete it.
+      int len = strlen(g_cmd[idx].cmd);
+      while(editIdx < len)
+      {
+        lineBuf[lineIdx] = g_cmd[idx].cmd[lineIdx];
+        outChar(lineBuf[editIdx]);
+        editIdx++;
+        lineIdx++;
+      }
+    }
+  }
+
+  // (FUTURE) handle ctrl-right, ctrl-left to skip words
 
   // Handle standard (printable) characters.
   else if ((extChar >= ' ') && (extChar <= '~'))
@@ -621,20 +663,23 @@ static int processEscapes(char c)
   // than the alloted array size for each entry must padd with null(s).
   const char kEscapes[][6] =
   {
-    "\x1B\x5b\x41\x00\x00",     // up arrow
-    "\x1B\x5b\x42\x00\x00",     // down arrow
-    "\x1B\x5b\x43\x00\x00",     // right arrow
-    "\x1B\x5b\x44\x00\x00",     // left arrow
+    "\x1B\x5B\x41\x00\x00",     // up arrow
+    "\x1B\x5B\x42\x00\x00",     // down arrow
+    "\x1B\x5B\x43\x00\x00",     // right arrow
+    "\x1B\x5B\x44\x00\x00",     // left arrow
     "\x1B\x4F\x50\x00\x00",     // F1
     "\x1B\x4F\x51\x00\x00",     // F2
     "\x1B\x4F\x52\x00\x00",     // F3
     "\x1B\x4F\x53\x00\x00",     // F4
+    "\x00\x00\x00\x00\x00",     // dummy, for collisino with tab (\x09)
     "\x1B\x5B\x31\x35\x7E",     // F5
     "\x1B\x5B\x31\x37\x7E",     // F6
     "\x1B\x5B\x31\x38\x7E",     // F7
     "\x1B\x5B\x31\x39\x7E",     // F8
     "\x1B\x5B\x32\x30\x7E",     // F9
-    "\x1B\x5b\x33\x7E\x00",     // delete
+    "\x1B\x5B\x33\x7E\x00",     // delete
+    "\x1B\x5B\x31\x7E\x00",     // home
+    "\x1B\x5B\x34\x7E\x00",     // end
   };
   static char escapeChars[sizeof(kEscapes[0])] = { 0 };
 
@@ -758,6 +803,32 @@ static bool isEmptyLine(const char * line)
 }
 
 /**
+ * @brief Look for a partial (or full) match of the given string to exactly
+ * one registered handler command. (FUTURE - also do constant string parameters?)
+ * 
+ * @param str partial line to match
+ * @return index of handler structure whose command string at least partially matches, -1 if no or multiple matches
+ */
+static int uniquePartialMatch(const char * str)
+{
+  int len = strlen(str);
+  int midx = -1;
+  int i;
+  for (i=0;i<g_numRegCmds;i++)
+  {
+    if (strncmp(str, g_cmd[i].cmd, len) == 0)
+    {
+      if (midx != -1)
+        return -1;  // multiple matches
+      midx = i;
+    }
+  }
+
+  // Return index found, or -1 if none.
+  return midx;
+}
+
+/**
  * @brief Build-in default handler when no other handler found in command table.
  * 
  * @param cmd command string
@@ -857,17 +928,6 @@ int cb(int c) { comms_put(c, fd); }
  */
 int main(int argc, char * argv[])
 {
-  // int fd = _open(devstr, _O_RDWR | _O_BINARY);
-
-  // char x = '\0';
-  // while (x != '*')
-  // {
-  //   read(fd, &x, 1);
-  //   write(fd, &x, 1);
-  // }
-
-  // close(fd);
-
   fd = comms_open(devstr);
   if (fd < 0)
   {
@@ -900,7 +960,7 @@ int main(int argc, char * argv[])
   //   printf("%02X", c);
   //   if ((c >= ' ') && (c <= '~'))
   //     printf("(%c)", c);
-  //   printf(" ");
+  //   puts("");
   // }
 
   printf("Using serial I/O through \"%s\"\n", devstr);
