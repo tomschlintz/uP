@@ -1,6 +1,12 @@
 #ifndef UP_H
 #define UP_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define UP_VERSION 0.01   ///< this is a pre-release version: not for distribution beyond specific projects
+
 // Defines. Some or all of these may be adjusted down to save RAM, or up to accommodate larger strings or number of parameters.
 #define MAX_STR 16          ///< maximum command or parameter string expected, for sizing arrays.
 #define MAX_PARAMETERS 8    ///< maximum number of command and parameter strings expected - note this will multiply by MAX_STR when allocating string storage!
@@ -15,5 +21,9 @@ char * uP_ProcessChar(const char c, int (*cb_out)(int c));
 void uP_setOutLineEnd(const char * str);
 void uP_setPrompt(const char * str);
 bool uP_confirmParameters(int numGivenParams, int numExpectedParams);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif  // UP_H

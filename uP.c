@@ -8,6 +8,8 @@
  * 
  * FUTURE: also provide a call-back to provide parameter hints.
  * FUTURE: also provide a "history" command handler by default.
+ * FUTURE: make syntax of handler functions simpler (typedef?)
+ * FUGURE: make handling of parameters, numParam checking, and error reporting simpler (provide functions)
  * 
  * Written in standard C and uses only standard library headers, minimum RAM, to allow integration into even the smallest projects.
  *
