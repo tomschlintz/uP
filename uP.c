@@ -193,7 +193,7 @@ char * uP_ProcessChar(const char c, int (*cb_out)(int c))
     strcpy(g_outLineEnd, "\r\n");
   }
 
-  // If chell_RegisterHandler() was never called to register any user commands, then initialize it now so that at least "help" is handled.
+  // If uP_RegisterHandler() was never called to register any user commands, then initialize it now so that at least "help" is handled.
   // Maybe make it a special help command, to provide help on how to register commands ?
   if (!g_helpInitialized)
   {

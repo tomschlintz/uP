@@ -58,7 +58,7 @@ int comms_open(const char * devStr)
 
   int fd = open(_devStr, O_RDWR | O_NOCTTY);
 
-  // Open open or reopen device string given or saved from last time.
+  // Open or reopen device string given or saved from last time.
   return fd;
 }
 

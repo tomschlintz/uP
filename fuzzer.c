@@ -38,6 +38,9 @@ char const * const devstr = "COM7";
 // Macro to generate a random numerical character {'0'..'9'}
 #define RANDOM_NUMER_CHAR ((char)(rand() * 9 / RAND_MAX + '0'))
 
+// Expected line-end character with reponses. This works with "\r\n", only looking for last character.
+#define LINE_END '\n'
+
 // Local prototypes.
 static void commPutStr(const char * str, int fd);
 static void randomPrintableString(char * str, int bufSize);
@@ -109,6 +112,17 @@ int main(int argc, char * argv[])
             commPutStr(str, fd);
         }
         commPutStr("\r\n", fd);
+
+        char c = '\0';
+        while (c != LINE_END)
+        {
+            if (c != LINE_END)
+            {
+                c = comms_get(fd);
+                printf("%c", c);
+            }
+        }
+        puts("");
 
         sleep(1);
     }
