@@ -861,7 +861,7 @@ void handle_example(char const * const cmd, char const * const * param, int numP
  * @param fmt 
  * @param ... 
  */
-void uP_printf(char * fmt, ...)
+static void uP_printf(char * fmt, ...)
 {
   va_list args;
   char str[MAX_TOTAL_COMMAND_CHARS+1];
