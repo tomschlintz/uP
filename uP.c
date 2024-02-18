@@ -1,10 +1,24 @@
 /**
  * @file uP.c
  * @author Tom Gordon
- * @brief Stream command-line handler, which accepts a character from stdin and returns a character for stdout (using a call-back).
- * Provides a full-featured, Linux-style shell interface, including handling of backspace, function and arrow keys for line navigation and line recall.
+ * @brief Command-line interface (CLI) handler, which accepts characters from any source, and returns a character for terminal display (using a call-back).
+ * 
+ * Welcome to uP (for "micro-Prompt"), a full-function but lightweight command-line interface (CLI).
+ * uP provides a full-featured, Linux-style shell interface, including handling of backspace, function and arrow keys for line navigation and line recall.
  * Allows registering of shell commands, including help and function handling for each. Each handler will receive the command string,
- * Number of parameters, and parameter list. Automatically provide a "help" shell command, based on the help provided for each command registered.
+ * Number of parameters, and parameter list. Automatically provides a "help" shell command, based on the help information provided for each command registered.
+ * 
+ * uP does not handle any serial interfaces, it simply handles the logic of the CLI, accepting one character at a time for input, and, through a user-provided
+ * call-back function, provides output to what is assumed will be a terminal waiting for output. This is done by calling the uP_ProcessChar() routine, passing the
+ * character input and the output call-back with each call.
+ * 
+ * Used alone, uP_ProcessChar() will process only the "help" command. While this is good for testing, real functionality comes with creating handler functions, and
+ * registering them by calling the uP_RegisterHandler() function. The more handlers registered, the more functionality is provided, up to the limits set in uP.h,
+ * which can be adjusted to balance memory avaiable with the number and complexity of the commands required. For simplicity, what is done with each command, and 
+ * with any parameters passed, is left to the registered command.
+ * 
+ * This source is written in "C", to provide the maximum compatibility with C & C++ on a variety of platforms, including Windows, Linux, Arduino, and C/C++ based
+ * embedded system firmmare. Only standard C calls are used.
  * 
  * FUTURE: also provide a call-back to provide parameter hints.
  * FUTURE: also provide a "history" command handler by default.
@@ -13,7 +27,7 @@
  * 
  * Written in standard C and uses only standard library headers, minimum RAM, to allow integration into even the smallest projects.
  *
- * @copyright Copyright (c) 2023, Gordon Innovations
+ * @copyright Copyright (c) 2024, Gordon Innovations
  * 
  */
 
