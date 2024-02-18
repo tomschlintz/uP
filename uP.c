@@ -39,14 +39,6 @@
 #include <stdarg.h>
 #include "uP.h"
 
-#define STAND_ALONE   // define to include a main() function, for stand-alone testing
-
-// DEBUG - use in place of return call to trace processEscapes(), below.
-#define traceReturn(rcode, escBuf) \
-{ \printf("escapeChars: {%02X, %02X, %02X, %02X, %02X, %02X}, returning %d\n", escBuf[0], escBuf[1], escBuf[2], escBuf[3], escBuf[4], escBuf[5], rcode); \
-  return rcode; \
-}
-
 /**
  * @brief This enumerates return value from processEscapes().
  * 
@@ -126,30 +118,6 @@ static int histIdx = 0;                                               ///< next 
 
 bool uP_RegisterHandler(const char * cmd, void (*handler)(char const * const cmd, char const * const * param, int numParams), const char * help, char const * const * hints)
 {
-  //  a) One full help string, which gets displayed when "help" shows all the commands.
-  //  b) A list of pointers to help strings (null-termminated) that allows guessing the next parameter from what the user starts typing, with tab.
-  //     These strings could be space-separated words that are valid for that parameter. For example, a "move" command might take as a 1st parameter
-  //     either "waist", "shoulder" or "arm", so one string in the list might be provided as "waist shoulder arm".
-  //  c) If a parameter is an integer or floating-point variable, help should hint at what type of value is to be entered. For example, a "move" command
-  //     might take <x> <y> <z> coordinates, so  entering "move", then tab, should display something like " <x coord>", but leave the cursor on the "<",
-  //     and remove this as soon as more characters are entered. Distinction could be that start/end bracketing characters are given ("<>", "[]", "{}"),
-  //     then assume this is a "ghost hint" rather than acceptable string choices. Null pointer provides no hints for that command.
-  //  B) and C) may be added later.
-  // If not called at all, default will be to provide just the help handler.
-
-  // If not used, both "help" and "hints" may be passed as null. Define pseudonyms for these in header.
-
-  // Note that handler routines, help string and hint strings are all just pointers to what's declared by the caller.
-
-  // Could allow space-separated string for cmd parameter, to register multiple command for one handler. For example, the caller may elect to use
-  // one handler routine for multiple commands, handling differently based on the "cmd" string passed, as "move skip jump" may all point to the same handler.
-
-  // We must provide helper functions, and template examples, so that caller has the flexibility to handle commands and parameters as they see fit,
-  // but does not over-burden caller with having to deal with too much complexity in each of their hander functions. For example, provide calls for:
-  //  a) Verifying the number and type of parameters, according to how the command was registered.
-  //  b) Probably just need to show template examples of how to handle strings vs int vs float parameters, along with range checking, and how to 
-  //     use the standard handler function parameters provided.
-
   // Fail-safe: check for max. Ignore and retun failure if full.
   if (g_numRegCmds >= MAX_COMMANDS)
     return false;
@@ -716,20 +684,17 @@ static int processEscapes(char c)
       // If two escapes in a row (one already buffered), tell caller to process escape as a regular character,
       // and ignore it here.
       return ESC_NO_ACTION;
-      // traceReturn(ESC_NO_ACTION, escapeChars)
     } else
     {
       // Otherwise start buffer with it here, and tell caller that we're currently gathering a possible escape sequence.
       escapeChars[0] = c;
       return ESC_PROCESSING;
-      // traceReturn(ESC_PROCESSING, escapeChars)
     }
   }
 
   // If not an escape character (above), and no escape sequence started, then we take no action, caller should handle as regular character.
   if (escIdx == 0)
     return ESC_NO_ACTION;
-    // traceReturn(ESC_NO_ACTION, escapeChars)
 
   // Buffer incoming. Fail-safe: insure index never exceeds buffer.
   if (escIdx < (sizeof(escapeChars)-1))
@@ -750,7 +715,6 @@ static int processEscapes(char c)
           // If last before termination, we have a match - return 1-based index.
           memset(escapeChars, 0, sizeof(escapeChars));
           return eseqIdx + 1;
-          // traceReturn(eseqIdx + 1, escapeChars)
         }
       } else
       {
@@ -762,7 +726,6 @@ static int processEscapes(char c)
     // All characters match so far, but more to check - return still processing.
     if (i >= escIdx)
       return ESC_PROCESSING;
-      // traceReturn(ESC_PROCESSING, escapeChars)
   }
 
   // If failed to match any known sequence, reset and tell caller to ignore the latest character, assuming it failed on
@@ -772,12 +735,10 @@ static int processEscapes(char c)
   {
     memset(escapeChars, 0, sizeof(escapeChars));
     return ESC_UNHANDLED;
-    // traceReturn(ESC_UNHANDLED, escapeChars)
   } else
   {
     // Otherwise waiting on more characters to match - return "still processing".
     return ESC_PROCESSING;
-    // traceReturn(ESC_PROCESSING, escapeChars)
   }
 }
 
@@ -914,90 +875,3 @@ void uP_printf(char * fmt, ...)
   for (i=0;i<len;i++)
     outChar(str[i]);
 }
-
-
-#ifdef STAND_ALONE
-#include <stdio.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <fcntl.h>
-
-#include "comms.h" // for testing with a loop-back connection
-
-// Loop-back serial device strings. This is for stand-alone testing. The caller
-// into this library is expected to both provide characters from an incoming stream
-// and provide a call-back to allow returning characters to an outgoing stream. This library
-// does not do streams, it just processes incoming characters and parses and processes commands.
-#ifdef __linux__
-char const * const devstr = "/dev/pts/5";
-#else
-char const * const devstr = "COM6";
-#endif // __linux__
-
-int fd = -1;
-
-// Use loopback out as our output call-back.
-int cb(int c) { comms_put(c, fd); }
-
-/**
- * @brief Main entry function, for testing via command-line.
- */
-int main(int argc, char * argv[])
-{
-  fd = comms_open(devstr);
-  if (fd < 0)
-  {
-    printf("Failed to open \"%s\"\n", devstr);
-    return -1;
-  }
-
-  // // DEBUG: test processEscapes.
-  // while (true)
-  // {
-  //   char c = comms_getc(fp);
-  //   int rcode = processEscapes(c);
-  //   if (rcode == ESC_NO_ACTION)
-  //     printf("%c", c);
-  //   else if (rcode == ESC_UNHANDLED)
-  //     continue;
-  //   else if (rcode >= 1)
-  //     printf("Escape %d\n", rcode);
-  // }
-
-  // // DEBUG: show key codes and escape sequences.
-  // while(true)
-  // {
-  //   char c = comms_get(fd);
-  //   if (c == '\r')
-  //   {
-  //     printf("\n");
-  //     continue;
-  //   }
-  //   printf("%02X", c);
-  //   if ((c >= ' ') && (c <= '~'))
-  //     printf("(%c)", c);
-  //   puts("");
-  // }
-
-  printf("Using serial I/O through \"%s\"\n", devstr);
-
-  // Example use of registering handler and setting prompt.
-  uP_RegisterHandler("add", handle_example, "add two numbers", NULL);
-  uP_setPrompt("> ");
-
-  char c = ' ';
-  while (c != '*')
-  {
-    // Get the next character in.
-    c = comms_get(fd);
-
-    // Process.
-    uP_ProcessChar(c, cb);
-  }
-
-  comms_close(fd);
-
-  uP_printf(g_outLineEnd);
-  return 0;
-}
-#endif  // STAND_ALONE
